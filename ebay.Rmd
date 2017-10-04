@@ -1,0 +1,59 @@
+---
+title: "ebay"
+output: pdf_document
+---
+
+```{r}
+setwd("~/Desktop")
+ebay <- read.csv("~/Desktop/ebay.csv")
+View(ebay)
+price=ebay$Adj.Close
+price
+price <- ts(rev(price), frequency=225, start=c(2005,230))
+plot.ts(price,main="EBay Stock Price")
+price2=as.numeric(price)
+log.rtne = as.vector(diff(log(price2)))
+pricee <- ts(log.rtn, frequency=225, start=c(2005,210) )
+plot.ts(pricee, ylab="log return",main="Log return of EBay stock price")
+acf(log.rtne)
+pacf(log.rtne)
+fitb=arima(log.rtne, order=c(0,0,1),optim.method='Nelder-Mead' );fitb###All significant
+tsdiag(fitb,gof=20)
+Box.test(fitb$resid, lag = 20, type = "Ljung", fitdf = 2)###P-value=0.0528
+Box.test(fitb$resid^2, lag = 20, type = "Ljung", fitdf = 2)#####ARCH EFFECT
+
+
+#####TRY GARCH 
+require(rugarch)
+spec9=ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)),mean.model=list(armaOrder=c(0,1)),distribution.model="std")
+fit9=ugarchfit(log.rtne,spec=spec9,solver='hybrid')
+show(fit9)
+plot(fit9, which=9)
+#####Forecast 
+plot(ugarchforecast(fit9, n.ahead=10))
+length(log.rtne)
+m9=ugarchfit(log.rtne, spec=spec9, out.sample=10)
+forecast9=ugarchforecast(m9,data=NULL,n.ahead=10,n.roll=10, out.sample=200)
+forecast9
+plot(forecast9, which=2)
+roll=ugarchroll(spec9, data=log.rtn, n.ahead=1, forecast.length=50, refit.every=10, refit.window=c("moving"))
+plot(roll, which=4)
+
+#####TRY I-GARCH
+spec8=ugarchspec(variance.model=list(model="fGARCH",submodel="TGARCH", garchOrder=c(1,1)),mean.model=list(armaOrder=c(0,2)),distribution.model="std")
+fit8=ugarchfit(log.rtn,spec=spec8)
+show(fit8)
+std.res1=res_rtn_log/sigma(fit8)
+qqnorm(std.res8)
+qqline(std.res8)
+######ebay
+m9=ugarchfit(log.rtn,spec=spec9)
+round(coef(m9),4)
+log.rtne[length(log.rtne)]
+sigma(m9)[length(log.rtne)]
+sigma3=sqrt(0.0219*0.01669829^2+0.9697*0.01944422^2)
+sigma3
+dnorm(qnorm(0.95))
+VaR3=0+1.645*sigma3;VaR3
+ES3=(0+(0.1031356/0.05)*(sigma3));ES3
+```

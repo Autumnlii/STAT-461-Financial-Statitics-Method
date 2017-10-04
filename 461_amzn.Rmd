@@ -1,0 +1,134 @@
+---
+title: "project_461"
+output: pdf_document
+---
+
+
+```{r}
+HistoricalQuotes <- read.csv("~/Downloads/HistoricalQuotes.csv")
+View(amzn)
+amzn=HistoricalQuotes
+price=amzn$close
+date=amzn$date
+price <- ts(rev(price), frequency=252, start=c(2005,210))
+plot.ts(price,main="Amazon Stock Price")
+price1=as.numeric(price)
+log.rtn = as.vector(diff(log(price1)))
+price3 <- ts(log.rtn, frequency=225, start=c(2005,210) )
+plot.ts(price3, ylab="log return",main="Log return of Amazon stock price")
+abline(0,0, col="red")
+t.test(log.rtn)
+Box.test(log.rtn, lag = 20, type = "Ljung")#p-value =0.005, try ARMA
+mu=mean(log.rtn)
+res_rtn=as.vector(log.rtn-mu)
+Box.test(res_rtn^2, lag = 20, type = "Ljung")##there is an arch effect
+
+
+require(forecast)
+auto.arima(log.rtn)
+acf(log.rtn)#####try MA2
+pacf(log.rtn)#####try AR2
+require(TSA)
+eacf(log.rtn)####MA2
+#############MA(2) Model
+fitb=arima(log.rtn, order=c(0,0,2) );fitb###AIC=-11182
+tsdiag(fitb,gof=20)
+Box.test(fitb$resid, lag = 20, type = "Ljung", fitdf = 2)###P-value=0.1
+Box.test(fitb$resid^2, lag = 20, type = "Ljung", fitdf = 2)#####ARCH EFFECT
+####try difference 
+n1=ar(diff(log.rtn), method="mle", lag.max=10)
+log.rtnd=diff(log.rtn)
+n1$order###order = 12
+require(fUnitRoots)
+adfTest(log(price1), lag=12, type="c")######P-value=0.01,reject, has unit root, it is stationary 
+acf(log.rtnd)
+pacf(log.rtnd)
+require(TSA)
+eacf(log.rtnd)
+require(forecast)
+auto.arima(log.rtnd)
+fitc=arima(log.rtnd, order=c(2,0,1) );fitc###AIC=-11167.64
+tsdiag(fitc,gof=20)
+Box.test(fitc$resid, lag = 20, type = "Ljung", fitdf = 2)###P-value=0.09
+Box.test(fitc$resid^2, lag = 20, type = "Ljung", fitdf = 2)#####ARCH EFFECT
+p1=c(1,-fitc$coef[1:4])
+roots=polyroot(p1)
+c.roots=1/roots
+Mod(c.roots)##(all values greater than 1, not stationary )
+
+#####################second part, deal with the valotility
+t.test(log.rtn)##p-value =0.04, expected value of rt significant is different from 0, need a constant
+res_rtn_log=fitb$resid 
+pacf(res_rtn_log^2)
+acf(res_rtn_log^2)
+length(fitb$residuals)
+y<-(fitb$residuals^2)[4:2517]
+x<-cbind((fitb$residuals^2)[3:2516], (fitb$residuals^2)[2:2515], (fitb$residuals^2)[1:2514])
+summary(lm(y~x))##### F TEST FOR Arch effect
+#d  
+Build a Gaussian ARMA-GARCH model to the rt series. Obtain the normal QQ-plot of the standardized residuals, and write down the fitted model. Is the model adequate? Why?
+require(rugarch)
+spec=ugarchspec(variance.model=list(model="fGARCH",submodel="TGARCH", garchOrder=c(1,1)),mean.model=list(armaOrder=c(0,2)),distribution.model="norm")
+fit=ugarchfit(log.rtn,spec=spec,solver='hybrid')
+show(fit)
+
+std.res=res_rtn_log/sigma(fit)
+qqnorm(std.res)
+qqline(std.res)
+adfTest(std.res, lag=12, type="c")#there is a unit root in the model, try IGarch
+
+#(e) Build an ARMA-GARCH model with Student-t innovations for the log return series. Perform model checking and write down the fitted model.
+spec1=ugarchspec(variance.model=list(model="sGARCH", garchOrder=c(1,1)),mean.model=list(armaOrder=c(0,2)),distribution.model="std")
+fit1=ugarchfit(log.rtn,spec=spec1)
+show(fit1)
+m1=ugarchfit(log.rtn,spec=spec1)
+round(coef(m1),4)
+#(f) Plot estimated volatilites using the fitted ARMA-GARCH model with Student-t innovations.
+fitted.sigma=sigma(fit1)
+vol <- ts(fitted.sigma^2, frequency=252, start=c(2005,230))
+plot.ts(vol, type="b", pch=".",ylab="Fitted Conditional Vlolitility", xlab="Time", main="Volatility")
+#(g) Obtain 1-step to 5-step ahead mean and volatility forecasts using the fitted ARMA-GARCH model with Student-t innovations.
+ugarchforecast(fit1, n.ahead=5)
+#(h) Fit an IGARCH(1,1) model for the log returns. Write down the fitted model. Is the IGARCHmodel adequate? Why
+spec2=ugarchspec(variance.model=list(model="eGARCH", garchOrder=c(1,1)),mean.model=list(armaOrder=c(0,2)),distribution.model="std")
+fit2=ugarchfit(log.rtn,spec=spec2)
+show(fit2)
+std.res1=res_rtn_log/sigma(fit2)
+qqnorm(std.res1)
+qqline(std.res1)
+
+#####Forecast 
+plot(ugarchforecast(fit1, n.ahead=10))
+length(log.rtn)
+m1=ugarchfit(log.rtn, spec=spec1, out.sample=10)
+forecast1=ugarchforecast(m1,data=NULL,n.ahead=10,n.roll=10, out.sample=200)
+forecast1
+sigma(forecast1)
+round(coef(m1),4)
+log.rtn[length(log.rtn)]
+sigma(m1)[length(log.rtn)]
+plot(forecast1, which=2)
+roll=ugarchroll(spec1, data=log.rtn, n.ahead=1, forecast.length=50, refit.every=10, refit.window=c("moving"),calculate.VaR=T,keep.coef=T)
+plot(roll)
+plot(roll, which=4)
+report(1,type="VaR",n.ahead=1,VaR.alpha=0.01,conf.level=0.95)
+result=plot(m1,n.ahead=12,ylab='Series & Forecasts',col=NULL,pch=19)
+
+#####RiskMetrics
+m1=ugarchfit(log.rtn,spec=spec1)
+round(coef(m1),4)
+log.rtn[length(log.rtn)]
+sigma(m1)[length(log.rtn)]
+sigma2=sqrt(0.0221*(-0.008767515)^2+0.9692*0.01933498^2);sigma1
+dnorm(qnorm(0.95))
+VaR1=0+1.645*sigma1;VaR1
+ES1=(0+(0.1031356/0.05)*(sigma2));ES1
+```
+
+You can also embed plots, for example:
+
+```{r, echo=FALSE}
+plot(cars)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
